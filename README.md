@@ -15,6 +15,11 @@ archive.
 
 This archive tool is often used in addition to enabling the [public access option](https://zulip.com/help/public-access-option) for your organization, which lets administrators configure selected streams to be web-public. Web-public streams can be viewed by anyone on the Internet without creating an account in your organization. The public access option does not yet support search engine indexing, which makes this archive tool a good option if it's important for your organization's chat history to appear in search results. It is easy to configure `zulip-archive` to automatically archive all web-public streams in your organization.
 
+# Changes in this fork
+
+- Adds downloading of assets like images, videos and profile pictures.
+- Stores reactions
+
 ### Contents
 * [Running zulip-archive as a GitHub action](#running-zulip-archive-as-a-github-action)
 * [Running zulip-archive without GitHub actions](#running-zulip-archive-without-github-actions)
