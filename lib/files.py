@@ -63,6 +63,30 @@ from pathlib import Path
 from .common import open_outfile
 
 
+def read_zulip_member_index(json_root):
+    """
+    member_index.json
+
+    This JSON has info for every member of the Zulip instance.
+    """
+    f = (json_root / Path("member_index.json")).open("r", encoding="utf-8")
+    member_index = json.load(f)
+    f.close()
+    return member_index
+
+
+def read_zulip_emoji_index(json_root):
+    """
+    emoji_index.json
+
+    This JSON has info for every emoji in the Zulip instance.
+    """
+    f = (json_root / Path("emoji_index.json")).open("r", encoding="utf-8")
+    emoji_index = json.load(f)
+    f.close()
+    return emoji_index
+
+
 def read_zulip_stream_info(json_root):
     """
     stream_index.json

@@ -42,6 +42,7 @@ About the data:
 
 import json
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 from .common import (
@@ -69,6 +70,9 @@ def separate_results(list):
     return map
 
 
+ASSET_URL_REGEX = '(?:src=|href=)"(\/user_[^"]+)"'
+
+
 # Retrieves all messages matching request from Zulip, starting at post id anchor.
 # As recommended in the Zulip API docs, requests 1000 messages at a time.
 # Returns a list of messages.
@@ -82,6 +86,11 @@ def request_all(client, request, anchor=0):
         request["anchor"] = response["messages"][-1]["id"] + 1
         response = safe_request(client.get_messages, request)
         msgs = msgs + response["messages"]
+
+    for i in range(len(msgs)):
+        m = re.findall(ASSET_URL_REGEX, msgs[i]["content"])
+        msgs[i]["assets"] = list(dict.fromkeys(m))
+
     return msgs
 
 
@@ -122,6 +131,9 @@ def populate_all(
 
     streams_data = {}
 
+    user_ids = set()
+    special_users = dict()
+
     for s in streams:
         stream_name = s["name"]
         stream_id = s["stream_id"]
@@ -156,7 +168,9 @@ def populate_all(
 
             latest_id = max(latest_id, last_message["id"])
 
-            dump_topic_messages(json_root, s, topic_name, messages)
+            dump_topic_messages(
+                json_root, s, topic_name, messages, user_ids, special_users
+            )
 
         stream_data = dict(
             id=stream_id,
@@ -168,6 +182,9 @@ def populate_all(
 
     js = dict(streams=streams_data, time=time.time())
     dump_stream_index(json_root, js)
+
+    populate_emoji(client, json_root, user_ids)
+    populate_members(client, json_root, user_ids, special_users)
 
 
 # Retrieves only new messages from Zulip, based on timestamps from the last update.
@@ -198,6 +215,9 @@ def populate_incremental(
     f = stream_index.open("r", encoding="utf-8")
     js = json.load(f)
     f.close()
+
+    user_ids = set()
+    special_users = dict()
 
     for s in (s for s in streams if is_valid_stream_name(s)):
         print(s["name"])
@@ -236,10 +256,25 @@ def populate_incremental(
                 "latest_date": m[-1]["timestamp"],
             }
             js["streams"][s["name"]]["topic_data"][topic_name] = new_topic_data
-            dump_topic_messages(json_root, s, topic_name, old + m)
+            dump_topic_messages(
+                json_root, s, topic_name, old + m, user_ids, special_users
+            )
 
     js["time"] = time.time()
     dump_stream_index(json_root, js)
+
+    populate_emoji(client, json_root, user_ids)
+    populate_members(client, json_root, user_ids, special_users)
+
+
+def populate_emoji(client, json_root, user_ids: set):
+    realm_emoji = safe_request(client.get_realm_emoji)["emoji"]
+    dump_realm_emoji_index(json_root, realm_emoji, user_ids)
+
+
+def populate_members(client, json_root, user_ids: set, special_users: dict):
+    members = safe_request(client.get_members)["members"]
+    dump_member_index(json_root, members, user_ids, special_users)
 
 
 def dump_stream_index(json_root, js):
@@ -251,7 +286,26 @@ def dump_stream_index(json_root, js):
     out.close()
 
 
-def dump_topic_messages(json_root, stream_data, topic_name, message_data):
+def dump_member_index(json_root, members, user_ids: set, special_users: dict):
+    out = open_outfile(json_root, Path("member_index.json"), "w")
+    members = {
+        str(u["user_id"]): slim_user(u) for u in members if u["user_id"] in user_ids
+    }
+    members.update(special_users)
+    dump_json(members, out)
+    out.close()
+
+
+def dump_realm_emoji_index(json_root, realm_emoji, user_ids: set):
+    out = open_outfile(json_root, Path("emoji_index.json"), "w")
+    realm_emoji = {k: slim_emoji(v, user_ids) for k, v in realm_emoji.items()}
+    dump_json(realm_emoji, out)
+    out.close()
+
+
+def dump_topic_messages(
+    json_root, stream_data, topic_name, message_data, user_ids, special_users
+):
     stream_name = stream_data["name"]
     stream_id = stream_data["stream_id"]
     sanitized_stream_name = sanitize_stream(stream_name, stream_id)
@@ -261,16 +315,52 @@ def dump_topic_messages(json_root, stream_data, topic_name, message_data):
     topic_fn = sanitized_topic_name + ".json"
 
     out = open_outfile(stream_dir, topic_fn, "w")
-    msgs = [slim_message(m) for m in message_data]
+    msgs = [slim_message(m, user_ids, special_users) for m in message_data]
     dump_json(msgs, out)
     out.close()
 
 
-def slim_message(msg):
+def slim_message(msg, user_ids: set, special_users: dict):
     fields = [
         "content",
         "id",
-        "sender_full_name",
+        "sender_id",
         "timestamp",
+        "assets",
+        "subject",
+        "reactions",
     ]
+
+    if msg["sender_realm_str"] != "":
+        special_users[str(msg["sender_id"])] = {
+            "realm_str": msg["sender_realm_str"],
+            "full_name": msg["sender_full_name"],
+            "email": msg["sender_email"],
+            "avatar_url": msg["avatar_url"],
+        }
+    else:
+        user_ids.add(msg["sender_id"])
+
+    msg["reactions"] = [slim_reactions(r, user_ids) for r in msg["reactions"]]
     return {k: v for k, v in msg.items() if k in fields}
+
+
+def slim_reactions(reactions, user_ids: set):
+    fields = [
+        "emoji_code",
+        "reaction_type",
+        "user_id",
+    ]
+    user_ids.add(reactions["user_id"])
+    return {k: v for k, v in reactions.items() if k in fields}
+
+
+def slim_emoji(emoji, user_ids: set):
+    fields = ["name", "source_url", "name", "author_id"]
+    user_ids.add(emoji["author_id"])
+    return {k: v for k, v in emoji.items() if k in fields}
+
+
+def slim_user(user):
+    fields = ["full_name", "avatar_url"]
+    return {k: v for k, v in user.items() if k in fields}

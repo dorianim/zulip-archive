@@ -27,6 +27,8 @@ from .files import (
     open_main_page,
     open_stream_topics_page,
     open_topic_messages_page,
+    read_zulip_member_index,
+    read_zulip_emoji_index,
     read_zulip_messages_for_topic,
     read_zulip_stream_info,
 )
@@ -63,6 +65,10 @@ def build_website(
     stream_info = read_zulip_stream_info(json_root)
 
     streams = stream_info["streams"]
+
+    member_index = read_zulip_member_index(json_root)
+    emoji_index = read_zulip_emoji_index(json_root)
+
     date_footer_html = last_updated_footer_html(stream_info)
     write_main_page(
         md_root,
@@ -102,6 +108,8 @@ def build_website(
                 title,
                 zulip_url,
                 zulip_icon_url,
+                member_index,
+                emoji_index,
                 stream_name,
                 streams[stream_name],
                 topic_name,
@@ -196,6 +204,8 @@ def write_topic_messages(
     title,
     zulip_url,
     zulip_icon_url,
+    member_index,
+    emoji_index,
     stream_name,
     stream,
     topic_name,
@@ -259,6 +269,8 @@ def write_topic_messages(
             html_root,
             zulip_url,
             zulip_icon_url,
+            member_index,
+            emoji_index,
             stream_name,
             stream_id,
             topic_name,

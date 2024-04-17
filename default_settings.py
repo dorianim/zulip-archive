@@ -75,6 +75,11 @@ you may prefer another directory structure.
 json_directory = Path(os.getenv("JSON_DIRECTORY", "../zulip_json"))
 
 """
+This is the path where all the assets are stored.
+"""
+assets_directory = Path(os.getenv("ASSETS_DIRECTORY", "../zulip_assets"))
+
+"""
 We write HTML to here.
 """
 if DEBUG:

@@ -55,8 +55,10 @@ def topic_page_links_html(
 
 <hr>
 
-<base href="{html.escape(zulip_url)}">
 """
+
+
+# <base href="{html.escape(zulip_url)}">
 
 
 def format_message_html(
@@ -64,6 +66,8 @@ def format_message_html(
     html_root,
     zulip_url,
     zulip_icon_url,
+    member_index,
+    emoji_index,
     stream_name,
     stream_id,
     topic_name,
@@ -80,7 +84,15 @@ def format_message_html(
         msg_id,
     )
 
-    user_name = msg["sender_full_name"]
+    try:
+        user_name = member_index[str(msg["sender_id"])]["full_name"]
+    except KeyError:
+        print(f"ERROR: Could not find user {msg['sender_id']}")
+        print(stream_name, topic_name, msg_id)
+        user_name = "Unknown User"
+
+    # TODO: add reactions
+
     date = format_date1(msg["timestamp"])
     msg_content_html = msg["content"]
     anchor_url = archive_message_url(

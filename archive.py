@@ -41,6 +41,8 @@ import configparser
 import os
 import zulip
 
+from pathlib import Path
+
 from lib.common import stream_validator, exit_immediately
 
 # Most of the heavy lifting is done by the following modules:
@@ -50,6 +52,8 @@ from lib.populate import populate_all, populate_incremental
 from lib.website import build_website
 
 from lib.sitemap import build_sitemap
+
+from lib.assets import download_all
 
 try:
     import settings
@@ -67,63 +71,68 @@ except ModuleNotFoundError:
     """
     )
 
-NO_JSON_DIR_ERROR_WRITE = """
-We cannot find a place to write JSON files.
+NO_DIR_ERROR_WRITE = """
+We cannot find a place to write {} files.
 
 Please run the below command:
 
 mkdir {}"""
 
-NO_JSON_DIR_ERROR_READ = """
-We cannot find a place to read JSON files.
+NO_DIR_ERROR_READ = """
+We cannot find a place to read {} files.
 
 Please run the below command:
 
 mkdir {}
 
-And then fetch the JSON:
+And then fetch the {:0}:
 
-python archive.py -t"""
-
-NO_HTML_DIR_ERROR = """
-We cannot find a place to write HTML files.
-
-Please run the below command:
-
-mkdir {}"""
+python archive.py -{}"""
 
 
 def get_json_directory(for_writing):
-    json_dir = settings.json_directory
+    return get_directory(
+        for_writing,
+        settings.json_directory,
+        "JSON",
+        "t",
+    )
 
-    if not json_dir.exists():
-        # I use posix paths here, since even on Windows folks will
-        # probably be using some kinda Unix-y shell to run mkdir.
-        if for_writing:
-            error_msg = NO_JSON_DIR_ERROR_WRITE.format(json_dir.as_posix())
-        else:
-            error_msg = NO_JSON_DIR_ERROR_READ.format(json_dir.as_posix())
 
-        exit_immediately(error_msg)
-
-    if not json_dir.is_dir():
-        exit_immediately(str(json_dir) + " needs to be a directory")
-
-    return settings.json_directory
+def get_assets_directory():
+    return get_directory(
+        True,
+        settings.assets_directory,
+        "assets",
+        "a",
+    )
 
 
 def get_html_directory():
-    html_dir = settings.html_directory
+    return get_directory(
+        True,
+        settings.html_directory,
+        "HTML",
+        "b",
+    )
 
-    if not html_dir.exists():
-        error_msg = NO_HTML_DIR_ERROR.format(html_dir.as_posix())
+
+def get_directory(for_writing, dir: Path, name, fetch_flag):
+
+    if not dir.exists():
+        # I use posix paths here, since even on Windows folks will
+        # probably be using some kinda Unix-y shell to run mkdir.
+        if for_writing:
+            error_msg = NO_DIR_ERROR_WRITE.format(name, dir.as_posix())
+        else:
+            error_msg = NO_DIR_ERROR_READ.format(name, dir.as_posix(), fetch_flag)
 
         exit_immediately(error_msg)
 
-    if not html_dir.is_dir():
-        exit_immediately(str(html_dir) + " needs to be a directory")
+    if not dir.is_dir():
+        exit_immediately(str(dir) + " needs to be a directory")
 
-    return settings.html_directory
+    return dir
 
 
 def get_client_info():
@@ -162,6 +171,12 @@ def run():
         default=False,
         help="Incrementally update the json archive",
     )
+    parser.add_argument(
+        "-a",
+        action="store_true",
+        default=False,
+        help="Download assets (images, videos, ...) from the Zulip server",
+    )
 
     results = parser.parse_args()
 
@@ -169,7 +184,7 @@ def run():
         print("Cannot perform both a total and incremental update. Use -t or -i.")
         exit(1)
 
-    if not (results.t or results.i or results.b):
+    if not (results.t or results.i or results.a or results.b):
         print("\nERROR!\n\nYou have not specified any work to do.\n")
         parser.print_help()
         exit(1)
@@ -178,6 +193,9 @@ def run():
 
     # The directory where this archive.py is located
     repo_root = os.path.dirname(os.path.realpath(__file__))
+
+    if results.a:
+        assets_root = get_assets_directory()
 
     if results.b:
         md_root = get_html_directory()
@@ -200,6 +218,9 @@ def run():
             json_root,
             is_valid_stream_name,
         )
+
+    if results.a:
+        download_all(client, zulip_url, json_root, assets_root)
 
     if results.b:
         build_website(
